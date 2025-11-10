@@ -10,7 +10,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
 
-    - uses: actions/setup-go@v1
+    - uses: actions/setup-go@v6
       with:
         go-version: 1.25.4
 
@@ -32,7 +32,7 @@ jobs:
         popd
 
     - name: Create Release
-      uses: softprops/action-gh-release@v1
+      uses: softprops/action-gh-release@v2
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       with:
