@@ -24,6 +24,7 @@ jobs:
     - name: Build
       run: |
         export PATH=$PATH:$(go env GOPATH)/bin
+        export CGO_ENABLED=0
         go install github.com/mitchellh/gox@latest
         gox -os="linux darwin windows" -arch "amd64 arm64" -output "build/vault-plugin-letsencrypt-{{.OS}}-{{.Arch}}" ./cmd/vault-plugin-letsencrypt
 
