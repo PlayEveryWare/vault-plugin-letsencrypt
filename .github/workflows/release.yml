@@ -27,7 +27,9 @@ jobs:
         go install github.com/mitchellh/gox@latest
         gox -os="linux darwin windows" -arch "amd64 arm64" -output "build/vault-plugin-letsencrypt-{{.OS}}-{{.Arch}}" ./cmd/vault-plugin-letsencrypt
 
-        find ./build -type f -name "vault-plugin-letsencrypt*" | xargs sha256sum > ./build/vault-plugin-letsencrypt.sha256sums
+        pushd ./build
+          find . -type f -name "vault-plugin-letsencrypt*" | xargs sha256sum > ../vault-plugin-letsencrypt.sha256sums
+        popd
 
     - name: Create Release
       uses: softprops/action-gh-release@v1
@@ -38,3 +40,4 @@ jobs:
         draft: false
         files: |
           ./build/vault-plugin-letsencrypt*
+          ./vault-plugin-letsencrypt.sha256sums
