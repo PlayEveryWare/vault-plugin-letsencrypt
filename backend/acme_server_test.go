@@ -26,7 +26,13 @@ type testingWriter struct {
 }
 
 func (tw *testingWriter) Write(p []byte) (int, error) {
-	tw.t.Log(string(p))
+	line := string(p)
+	if len(line) == 0 {
+		return 0, nil
+	} else if line[len(line)-1] == '\n' {
+		line = line[:len(line)-1]
+	}
+	tw.t.Log(line)
 	return len(p), nil
 }
 
@@ -82,12 +88,12 @@ func (b *testBackend) startACMEServer(t *testing.T, opts ...AcmeServerOption) *a
 		dnsAddr, ok := as.dnsListener.LocalAddr().(*net.UDPAddr)
 		require.True(t, ok)
 
-		resolverAddress := dnsAddr.String()
+		resolverAddress = dnsAddr.String()
 
 		b.dnsResolvers = []string{
 			resolverAddress,
 		}
-		b.skipDNSResolve = true
+		b.skipAuthoritativeNSCheck = true
 	} else {
 		t.Log("Skipping mock DNS resolver for ACME")
 	}

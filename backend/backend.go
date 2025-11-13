@@ -23,11 +23,11 @@ var (
 
 type backend struct {
 	*framework.Backend
-	tlsConfig              *tls.Config
-	dnsResolvers           []string
-	skipDNSResolve         bool
-	CustomDNSProviders     map[string]func() (challenge.Provider, error)
-	CustomDNSProvidersLock sync.RWMutex
+	tlsConfig                *tls.Config
+	dnsResolvers             []string
+	skipAuthoritativeNSCheck bool
+	CustomDNSProviders       map[string]func() (challenge.Provider, error)
+	CustomDNSProvidersLock   sync.RWMutex
 }
 
 func Factory(ctx context.Context, conf *logical.BackendConfig) (logical.Backend, error) {

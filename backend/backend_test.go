@@ -26,9 +26,8 @@ func createTestBackend(t *testing.T) *testBackend {
 	ms := &mockStorage{
 		ls: &logical.InmemStorage{},
 	}
-	config := &logical.BackendConfig{
-		StorageView: ms,
-	}
+	config := logical.TestBackendConfig()
+	config.StorageView = ms
 
 	b, err := Factory(t.Context(), config)
 	require.NoError(t, err)
