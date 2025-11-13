@@ -396,7 +396,7 @@ func TestPathCerts_Issues_Nil(t *testing.T) {
 	})
 	defer cleanup()
 
-	as := b.startACMEServer(t)
+	as := b.startACMEServer(t, WithoutDNSResolver())
 	defer as.Close()
 
 	const (

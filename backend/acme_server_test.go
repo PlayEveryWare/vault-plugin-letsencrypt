@@ -40,8 +40,24 @@ type acmeServer struct {
 	txtRecordsLock sync.RWMutex
 }
 
+type AcmeServerOption func(*acmeConfig)
+
+func WithoutDNSResolver() AcmeServerOption {
+	return func(c *acmeConfig) {
+		c.SkipDNS = true
+	}
+}
+
+type acmeConfig struct {
+	SkipDNS bool
+}
+
 // create an in-memory ACME server for testing using pebble
-func (b *testBackend) startACMEServer(t *testing.T) *acmeServer {
+func (b *testBackend) startACMEServer(t *testing.T, opts ...AcmeServerOption) *acmeServer {
+	config := &acmeConfig{}
+	for _, opt := range opts {
+		opt(config)
+	}
 
 	as := &acmeServer{
 		t: t,
@@ -49,20 +65,32 @@ func (b *testBackend) startACMEServer(t *testing.T) *acmeServer {
 
 	// start an in-process DNS resolver for pebble
 	var err error
-	as.dnsListener, err = net.ListenPacket("udp", "127.0.0.1:0")
-	require.NoError(t, err)
+	var resolverAddress string
+	if !config.SkipDNS {
+		as.dnsListener, err = net.ListenPacket("udp", "127.0.0.1:0")
+		require.NoError(t, err)
 
-	dnsHandler := dns.NewServeMux()
-	dnsHandler.HandleFunc(".", as.HandleDNS)
+		dnsHandler := dns.NewServeMux()
+		dnsHandler.HandleFunc(".", as.HandleDNS)
 
-	dnsServer := &dns.Server{
-		PacketConn: as.dnsListener,
-		Handler:    dnsHandler,
+		dnsServer := &dns.Server{
+			PacketConn: as.dnsListener,
+			Handler:    dnsHandler,
+		}
+		go dnsServer.ActivateAndServe()
+
+		dnsAddr, ok := as.dnsListener.LocalAddr().(*net.UDPAddr)
+		require.True(t, ok)
+
+		resolverAddress := dnsAddr.String()
+
+		b.dnsResolvers = []string{
+			resolverAddress,
+		}
+		b.skipDNSResolve = true
+	} else {
+		t.Log("Skipping mock DNS resolver for ACME")
 	}
-	go dnsServer.ActivateAndServe()
-
-	dnsAddr, ok := as.dnsListener.LocalAddr().(*net.UDPAddr)
-	require.True(t, ok)
 
 	logger := log.New(&testingWriter{t}, "Pebble ", log.LstdFlags)
 
@@ -108,11 +136,6 @@ func (b *testBackend) startACMEServer(t *testing.T) *acmeServer {
 		retryAuthz                     = 3
 		retryOrder                     = 5
 	)
-
-	resolverAddress := dnsAddr.String()
-	b.dnsResolvers = []string{
-		dnsAddr.String(),
-	}
 
 	profiles := map[string]ca.Profile{
 		"default": {
@@ -221,5 +244,7 @@ func (as *acmeServer) CleanUp(domain, token, keyAuth string) error {
 
 func (as *acmeServer) Close() {
 	as.listener.Close()
-	as.dnsListener.Close()
+	if as.dnsListener != nil {
+		as.dnsListener.Close()
+	}
 }

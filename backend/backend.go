@@ -25,6 +25,7 @@ type backend struct {
 	*framework.Backend
 	tlsConfig              *tls.Config
 	dnsResolvers           []string
+	skipDNSResolve         bool
 	CustomDNSProviders     map[string]func() (challenge.Provider, error)
 	CustomDNSProvidersLock sync.RWMutex
 }

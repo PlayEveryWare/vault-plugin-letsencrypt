@@ -106,15 +106,16 @@ func (b *backend) certsRead(ctx context.Context, req *logical.Request, data *fra
 		return nil, errwrap.Wrapf("failed to create DNS provider: {{err}}", err)
 	}
 
+	var opts []dns01.ChallengeOption
+
 	if len(b.dnsResolvers) > 0 {
-		err = client.Challenge.SetDNS01Provider(dnsProvider,
-			dns01.AddRecursiveNameservers(dns01.ParseNameservers(b.dnsResolvers)),
-			dns01.DisableAuthoritativeNssPropagationRequirement(),
-		)
-	} else {
-		err = client.Challenge.SetDNS01Provider(dnsProvider)
+		opts = append(opts, dns01.AddRecursiveNameservers(dns01.ParseNameservers(b.dnsResolvers)))
 	}
-	if err != nil {
+
+	if b.skipDNSResolve || provider == "nil" {
+		opts = append(opts, dns01.DisableAuthoritativeNssPropagationRequirement())
+	}
+	if err := client.Challenge.SetDNS01Provider(dnsProvider, opts...); err != nil {
 		return nil, err
 	}
 
