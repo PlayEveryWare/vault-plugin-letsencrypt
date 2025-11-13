@@ -54,6 +54,8 @@ func Factory(ctx context.Context, conf *logical.BackendConfig) (logical.Backend,
 		return nil, err
 	}
 
+	b.RegisterDNSProvider("nil", newNilDNSProvider)
+
 	b.Logger().Info("plugin backend succesfully initialized")
 	return b, nil
 }
@@ -76,4 +78,18 @@ func (b *backend) NewDNSChallengeProviderByName(name string) (challenge.Provider
 	}
 
 	return dns.NewDNSChallengeProviderByName(name)
+}
+
+type nilDNSProvider struct{}
+
+func newNilDNSProvider() (challenge.Provider, error) {
+	return &nilDNSProvider{}, nil
+}
+
+func (*nilDNSProvider) Present(domain, token, keyAuth string) error {
+	return nil
+}
+
+func (*nilDNSProvider) CleanUp(domain, token, keyAuth string) error {
+	return nil
 }

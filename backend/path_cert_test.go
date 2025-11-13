@@ -387,3 +387,60 @@ func TestPathCerts_LeaseRevoke(t *testing.T) {
 	require.NoError(t, err)
 	assert.NotNil(t, cert)
 }
+
+func TestPathCerts_Issues_Nil(t *testing.T) {
+	b := createTestBackend(t)
+
+	cleanup := WithEnvOverrides(map[string]string{
+		"PEBBLE_VA_ALWAYS_VALID": "1",
+	})
+	defer cleanup()
+
+	as := b.startACMEServer(t)
+	defer as.Close()
+
+	const (
+		account  = "test-account"
+		provider = "nil"
+		fqdn     = "test.example.com"
+	)
+
+	path := MakeDNS01Path(account, provider, fqdn)
+
+	accountPath := "accounts/" + account
+	req := &logical.Request{
+		Path:      accountPath,
+		Operation: logical.UpdateOperation,
+		Data: map[string]interface{}{
+			"email":         "test@example.com",
+			"directory_url": as.DirectoryURL,
+			"tos_agreed":    true,
+		},
+	}
+
+	resp, err := b.HandleRequest(t, req)
+	require.NoError(t, err)
+	require.NotNil(t, resp)
+	require.NoError(t, resp.Error())
+
+	req = &logical.Request{
+		Path:      path,
+		Operation: logical.ReadOperation,
+	}
+
+	resp, err = b.HandleRequest(t, req)
+	require.NoError(t, err)
+	require.NotNil(t, resp)
+	require.NoError(t, resp.Error())
+
+	certs, err := certcrypto.ParsePEMBundle([]byte(resp.Data["certificate"].(string)))
+	require.NoError(t, err)
+	require.NotEmpty(t, certs)
+
+	key, err := certcrypto.ParsePEMPrivateKey([]byte(resp.Data["private_key"].(string)))
+	require.NoError(t, err)
+	require.NotNil(t, key)
+
+	assert.Contains(t, certcrypto.ExtractDomains(certs[0]), fqdn)
+	assertCertMatchesKey(t, certs[0], key)
+}
