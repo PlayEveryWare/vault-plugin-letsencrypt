@@ -112,7 +112,7 @@ func (b *backend) certsRead(ctx context.Context, req *logical.Request, data *fra
 		opts = append(opts, dns01.AddRecursiveNameservers(dns01.ParseNameservers(b.dnsResolvers)))
 	}
 
-	if b.skipDNSResolve || provider == "nil" {
+	if b.skipAuthoritativeNSCheck || provider == "nil" {
 		opts = append(opts, dns01.DisableAuthoritativeNssPropagationRequirement())
 	}
 	if err := client.Challenge.SetDNS01Provider(dnsProvider, opts...); err != nil {

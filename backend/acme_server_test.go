@@ -82,12 +82,12 @@ func (b *testBackend) startACMEServer(t *testing.T, opts ...AcmeServerOption) *a
 		dnsAddr, ok := as.dnsListener.LocalAddr().(*net.UDPAddr)
 		require.True(t, ok)
 
-		resolverAddress := dnsAddr.String()
+		resolverAddress = dnsAddr.String()
 
 		b.dnsResolvers = []string{
 			resolverAddress,
 		}
-		b.skipDNSResolve = true
+		b.skipAuthoritativeNSCheck = true
 	} else {
 		t.Log("Skipping mock DNS resolver for ACME")
 	}
