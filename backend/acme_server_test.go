@@ -26,7 +26,13 @@ type testingWriter struct {
 }
 
 func (tw *testingWriter) Write(p []byte) (int, error) {
-	tw.t.Log(string(p))
+	line := string(p)
+	if len(line) == 0 {
+		return 0, nil
+	} else if line[len(line)-1] == '\n' {
+		line = line[:len(line)-1]
+	}
+	tw.t.Log(line)
 	return len(p), nil
 }
 
