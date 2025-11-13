@@ -119,6 +119,15 @@ func (b *backend) certsRead(ctx context.Context, req *logical.Request, data *fra
 		opts = append(opts, dns01.DisableAuthoritativeNssPropagationRequirement())
 		b.Logger().Debug("Skipping authoritative NS checks")
 	}
+
+	if provider == "nil" {
+		opts = append(opts, dns01.WrapPreCheck(func(domain, fqdn, value string, check dns01.PreCheckFunc) (bool, error) {
+			return true, nil
+		}))
+
+		b.Logger().Debug("Skipping DNS progagation in challenge")
+	}
+
 	if err := client.Challenge.SetDNS01Provider(dnsProvider, opts...); err != nil {
 		return nil, err
 	}
