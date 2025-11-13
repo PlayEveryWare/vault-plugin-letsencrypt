@@ -1,0 +1,42 @@
+name: Verify PR
+on:
+  pull_request:
+    types:
+      - opened
+      - reopened
+      - synchronize
+
+jobs:
+  build:
+    name: Verify build
+    runs-on: ubuntu-latest
+    steps:
+
+    - uses: actions/checkout@v5
+
+    - uses: actions/setup-go@v6
+      with:
+        go-version-file: ./go.mod
+
+    - name: Build
+      run: |
+        export PATH=$PATH:$(go env GOPATH)/bin
+        export CGO_ENABLED=0
+        go install github.com/mitchellh/gox@latest
+        gox -os="linux darwin windows" -arch "amd64 arm64" -output "build/vault-plugin-letsencrypt-{{.OS}}-{{.Arch}}" ./cmd/vault-plugin-letsencrypt
+
+  test:
+    name: Run tests
+    runs-on: ubuntu-latest
+    steps:
+
+    - uses: actions/checkout@v5
+
+    - uses: actions/setup-go@v6
+      with:
+        go-version-file: ./go.mod
+
+    - name: Test
+      run: |
+        export PATH=$PATH:$(go env GOPATH)/bin
+        go test ./...
