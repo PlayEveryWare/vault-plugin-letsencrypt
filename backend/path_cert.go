@@ -33,7 +33,7 @@ func pathCerts(b *backend) []*framework.Path {
 			Pattern: "certs/dns-01/" +
 				framework.GenericNameRegex("account") + "/" +
 				framework.GenericNameRegex("provider") + "/" +
-				framework.GenericNameRegex("fqdn"),
+				`(?P<fqdn>[^/]+)`,
 			Fields: map[string]*framework.FieldSchema{
 				"account": {
 					Type:        framework.TypeString,
