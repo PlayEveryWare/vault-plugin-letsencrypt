@@ -31,12 +31,29 @@ func getCert(ctx context.Context, storage logical.Storage, path string) (*cert, 
 	return cert, nil
 }
 
+func (c *cert) NotBefore() time.Time {
+	if len(c.CertificateChain) > 0 {
+		return c.CertificateChain[0].NotBefore
+	}
+
+	return time.Time{}
+}
+
 func (c *cert) NotAfter() time.Time {
 	if len(c.CertificateChain) > 0 {
 		return c.CertificateChain[0].NotAfter
 	}
 
 	return time.Time{}
+}
+
+func (c *cert) RenewalDeadline() time.Time {
+	var (
+		validDuration     = c.NotAfter().Sub(c.NotBefore())
+		twoThirdsDuration = validDuration * 2 / 3
+		deadline          = c.NotBefore().Add(twoThirdsDuration)
+	)
+	return deadline
 }
 
 func (c *cert) write(ctx context.Context, storage logical.Storage, path string) error {

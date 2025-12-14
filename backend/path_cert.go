@@ -77,8 +77,9 @@ func (b *backend) certsRead(ctx context.Context, req *logical.Request, data *fra
 	}
 
 	if c != nil && len(c.CertificateChain) > 0 && c.Key.PrivateKey != nil {
-		notAfter := c.NotAfter()
-		if !notAfter.IsZero() && time.Until(notAfter) > 30*24*time.Hour {
+
+		timeUntilRenwal := time.Until(c.RenewalDeadline())
+		if timeUntilRenwal > 0 {
 			return b.certResponse(ctx, c, req, account, provider)
 		}
 	}
@@ -198,8 +199,7 @@ func (b *backend) certResponse(ctx context.Context, c *cert, req *logical.Reques
 	}
 	keyPem := pem.EncodeToMemory(block)
 
-	ttlUntilExpiration := time.Until(c.NotAfter())
-	ttl := ttlUntilExpiration - 30*24*time.Hour
+	ttl := time.Until(c.RenewalDeadline())
 	if ttl < 1*time.Hour {
 		ttl = 1 * time.Hour
 	}

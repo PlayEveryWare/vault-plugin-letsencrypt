@@ -30,8 +30,8 @@ func TestCert_Serialization(t *testing.T) {
 	storage := &logical.InmemStorage{}
 
 	notAfter := time.Now().Add(265 * 24 * time.Hour)
-	leaf, key := generateSelfSignedCert(t, "test.example.com", nil, notAfter)
-	intermediate, _ := generateSelfSignedCert(t, "ca.example.com", nil, notAfter)
+	leaf, key := generateSelfSignedCert(t, "test.example.com", nil, time.Now(), notAfter)
+	intermediate, _ := generateSelfSignedCert(t, "ca.example.com", nil, time.Now(), notAfter)
 
 	originalCert := &cert{
 		CertificateChain: []*x509.Certificate{leaf, intermediate},
@@ -57,11 +57,12 @@ func assertCertEqual(t *testing.T, expected *cert, actual *cert) {
 		actualCert := actual.CertificateChain[ii]
 		assert.Equal(t, expectedCert.Raw, actualCert.Raw)
 		assert.Equal(t, expectedCert.Subject, actualCert.Subject)
+		assert.Equal(t, expectedCert.NotBefore, actualCert.NotBefore)
 		assert.Equal(t, expectedCert.NotAfter, actualCert.NotAfter)
 	}
 }
 
-func generateSelfSignedCert(t *testing.T, fqdn string, ips []net.IP, notAfter time.Time) (*x509.Certificate, accountKey) {
+func generateSelfSignedCert(t *testing.T, fqdn string, ips []net.IP, notBefore, notAfter time.Time) (*x509.Certificate, accountKey) {
 	privateKey, err := rsa.GenerateKey(rand.Reader, 2048)
 	require.NoError(t, err)
 
@@ -75,7 +76,7 @@ func generateSelfSignedCert(t *testing.T, fqdn string, ips []net.IP, notAfter ti
 			StreetAddress: []string{""},
 			PostalCode:    []string{""},
 		},
-		NotBefore:             time.Now(),
+		NotBefore:             notBefore,
 		NotAfter:              notAfter,
 		KeyUsage:              x509.KeyUsageKeyEncipherment | x509.KeyUsageDigitalSignature,
 		ExtKeyUsage:           []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth},

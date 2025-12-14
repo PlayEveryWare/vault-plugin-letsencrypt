@@ -103,7 +103,7 @@ func (b *testBackend) startACMEServer(t *testing.T, opts ...AcmeServerOption) *a
 	// generate self-signed certificate for TLS
 	localIPs := []net.IP{net.IPv4(127, 0, 0, 1), net.IPv6loopback}
 	expiration := time.Now().Add(365 * 24 * time.Hour)
-	cert, key := generateSelfSignedCert(t, "localhost", localIPs, expiration)
+	cert, key := generateSelfSignedCert(t, "localhost", localIPs, time.Now(), expiration)
 
 	// Create TLS config
 	tlsConfig := &tls.Config{

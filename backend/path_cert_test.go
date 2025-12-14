@@ -25,7 +25,7 @@ func TestPathCerts_ExistingCertificate(t *testing.T) {
 
 	path := MakeDNS01Path(account, provider, fqdn)
 	notAfter := time.Now().Add(90 * 24 * time.Hour)
-	leaf, key := generateSelfSignedCert(t, fqdn, nil, notAfter)
+	leaf, key := generateSelfSignedCert(t, fqdn, nil, time.Now(), notAfter)
 
 	originalCert := &cert{
 		CertificateChain: []*x509.Certificate{leaf},
@@ -236,7 +236,7 @@ func TestPathCerts_Renew(t *testing.T) {
 	require.NoError(t, resp.Error())
 
 	notAfter := time.Now().Add(-time.Hour)
-	leaf, key := generateSelfSignedCert(t, fqdn, nil, notAfter)
+	leaf, key := generateSelfSignedCert(t, fqdn, nil, time.Now(), notAfter)
 
 	originalCert := &cert{
 		CertificateChain: []*x509.Certificate{leaf},
@@ -354,7 +354,7 @@ func TestPathCerts_LeaseRevoke(t *testing.T) {
 
 	path := MakeDNS01Path(account, provider, fqdn)
 	notAfter := time.Now().Add(90 * 24 * time.Hour)
-	leaf, key := generateSelfSignedCert(t, fqdn, nil, notAfter)
+	leaf, key := generateSelfSignedCert(t, fqdn, nil, time.Now(), notAfter)
 
 	originalCert := &cert{
 		CertificateChain: []*x509.Certificate{leaf},
@@ -499,4 +499,145 @@ func TestPathCerts_IssuesNew_Wildcard(t *testing.T) {
 
 	assert.Contains(t, certcrypto.ExtractDomains(certs[0]), fqdn)
 	assertCertMatchesKey(t, certs[0], key)
+}
+
+func TestPathCerts_Renews_TwoThirds(t *testing.T) {
+	type testCase struct {
+		Desc        string
+		NotBefore   time.Time
+		NotAfter    time.Time
+		ShouldRenew bool
+	}
+
+	tests := []testCase{
+		// Current 90 day certs
+		{
+			Desc:        "90d-cert do-not-renew",
+			NotBefore:   time.Now(),
+			NotAfter:    time.Now().Add(90 * 24 * time.Hour),
+			ShouldRenew: false,
+		},
+		{
+			Desc:        "90d-cert needs-renew",
+			NotBefore:   time.Now().Add(-61 * 24 * time.Hour),
+			NotAfter:    time.Now().Add(29 * 24 * time.Hour),
+			ShouldRenew: true,
+		},
+
+		// Current shortlived (6 day) certs
+		{
+			Desc:        "6d-cert do-not-renew",
+			NotBefore:   time.Now(),
+			NotAfter:    time.Now().Add(6 * 24 * time.Hour),
+			ShouldRenew: false,
+		},
+		{
+			Desc:        "6d-cert needs-renew",
+			NotBefore:   time.Now().Add(-5 * 24 * time.Hour),
+			NotAfter:    time.Now().Add(1 * 24 * time.Hour),
+			ShouldRenew: true,
+		},
+
+		// Future 64 day certs
+		{
+			Desc:        "64d-cert do-not-renew",
+			NotBefore:   time.Now(),
+			NotAfter:    time.Now().Add(64 * 24 * time.Hour),
+			ShouldRenew: false,
+		},
+		{
+			Desc:        "64d-cert needs-renew",
+			NotBefore:   time.Now().Add(-41 * 24 * time.Hour),
+			NotAfter:    time.Now().Add(20 * 24 * time.Hour),
+			ShouldRenew: true,
+		},
+
+		// Future 45 day certs
+		{
+			Desc:        "45d-cert do-not-renew",
+			NotBefore:   time.Now(),
+			NotAfter:    time.Now().Add(45 * 24 * time.Hour),
+			ShouldRenew: false,
+		},
+		{
+			Desc:        "45d-cert needs-renew",
+			NotBefore:   time.Now().Add(-31 * 24 * time.Hour),
+			NotAfter:    time.Now().Add(14 * 24 * time.Hour),
+			ShouldRenew: true,
+		},
+	}
+
+	for _, tc := range tests {
+
+		func() {
+			b := createTestBackend(t)
+
+			as := b.startACMEServer(t)
+			defer as.Close()
+
+			const (
+				account  = "test-account"
+				provider = "test-dns"
+				fqdn     = "test.example.com"
+			)
+
+			path := MakeDNS01Path(account, provider, fqdn)
+
+			b.RegisterDNSProvider(provider, func() (challenge.Provider, error) {
+				return as, nil
+			})
+
+			accountPath := "accounts/" + account
+			req := &logical.Request{
+				Path:      accountPath,
+				Operation: logical.UpdateOperation,
+				Data: map[string]interface{}{
+					"email":         "test@example.com",
+					"directory_url": as.DirectoryURL,
+					"tos_agreed":    true,
+				},
+			}
+
+			resp, err := b.HandleRequest(t, req)
+			require.NoError(t, err)
+			require.NotNil(t, resp)
+			require.NoError(t, resp.Error())
+
+			leaf, key := generateSelfSignedCert(t, fqdn, nil, tc.NotBefore, tc.NotAfter)
+
+			originalCert := &cert{
+				CertificateChain: []*x509.Certificate{leaf},
+				Key:              key,
+			}
+			err = originalCert.write(t.Context(), b.Storage, path)
+			require.NoError(t, err)
+
+			req = &logical.Request{
+				Path:      path,
+				Operation: logical.ReadOperation,
+			}
+
+			resp, err = b.HandleRequest(t, req)
+			require.NoError(t, err)
+			require.NotNil(t, resp)
+			require.NoError(t, resp.Error())
+
+			certs, err := certcrypto.ParsePEMBundle([]byte(resp.Data["certificate"].(string)))
+			require.NoError(t, err)
+			require.NotEmpty(t, certs)
+
+			privKey, err := certcrypto.ParsePEMPrivateKey([]byte(resp.Data["private_key"].(string)))
+			require.NoError(t, err)
+			require.NotNil(t, privKey)
+
+			assert.Contains(t, certcrypto.ExtractDomains(certs[0]), fqdn)
+			if tc.ShouldRenew {
+				assertCertMatchesKey(t, certs[0], privKey)
+				assert.Truef(t, certs[0].NotAfter.After(tc.NotAfter), "%s", tc.Desc)
+			} else {
+				assert.Equalf(t, tc.NotAfter.Year(), certs[0].NotAfter.Year(), tc.Desc)
+				assert.Equalf(t, tc.NotAfter.YearDay(), certs[0].NotAfter.YearDay(), tc.Desc)
+			}
+		}()
+	}
 }
