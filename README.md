@@ -46,9 +46,9 @@ sha256sum vault-plugin-letsencrypt
 
 3. Register the plugin in Vault:
 ```bash
-vault write sys/plugins/catalog/secret/vault-plugin-letsencrypt \
-  sha256="<checksum>" \
-  command="vault-plugin-letsencrypt"
+vault plugin register \
+  -sha256=<checksum> \
+  secret vault-plugin-letsencrypt
 ```
 
 4. Enable the plugin:
@@ -78,8 +78,36 @@ vault write letsencrypt/accounts/myaccount \
   tos_agreed=true \
   directory_url="https://acme-v02.api.letsencrypt.org/directory" \
   key_type="EC256" \
-  dns_provider_env='{"CLOUDFLARE_API_TOKEN":"your-token"}'
+  dns_provider_env=CLOUDFLARE_API_TOKEN=your-cloudflare-dns-token \
+  dns_provider_env=LINODE_TOKEN=your-linode-dns-token \
+  dns_provider_env=DO_AUTH_TOKEN=your-digitalocean-dns-token \
+  ;
 ```
+
+You can find the dns environment variable by inspecting the LEGO source code.
+
+Start at https://github.com/go-acme/lego/blob/master/providers/dns, then locate
+your DNS provider.
+
+For example, DigitalOcean > https://github.com/go-acme/lego/blob/master/providers/dns/digitalocean
+
+https://github.com/go-acme/lego/blob/465d7918a80d1887d84f6eeb8aaee2e71622114c/providers/dns/digitalocean/digitalocean.go#L22-L25
+```go
+// Environment variables names.
+const (
+	envNamespace = "DO_"
+
+	EnvAuthToken = envNamespace + "AUTH_TOKEN"
+	EnvAPIUrl    = envNamespace + "API_URL"
+
+	EnvTTL                = envNamespace + "TTL"
+	EnvPropagationTimeout = envNamespace + "PROPAGATION_TIMEOUT"
+	EnvPollingInterval    = envNamespace + "POLLING_INTERVAL"
+	EnvHTTPTimeout        = envNamespace + "HTTP_TIMEOUT"
+)
+```
+
+The `dns_provider_env` in this case is `DO_AUTH_TOKEN`
 
 **Parameters:**
 - `email` (required): Email address for the ACME account
