@@ -7,7 +7,7 @@ require (
 	github.com/hashicorp/errwrap v1.1.0
 	github.com/hashicorp/go-hclog v1.6.3
 	github.com/hashicorp/vault/api v1.22.0
-	github.com/hashicorp/vault/sdk v0.20.0
+	github.com/hashicorp/vault/sdk v0.21.0
 	github.com/letsencrypt/pebble/v2 v2.8.0
 	github.com/miekg/dns v1.1.69
 	github.com/stretchr/testify v1.11.1
