@@ -8,7 +8,7 @@ require (
 	github.com/hashicorp/go-hclog v1.6.3
 	github.com/hashicorp/vault/api v1.22.0
 	github.com/hashicorp/vault/sdk v0.21.0
-	github.com/letsencrypt/pebble/v2 v2.8.0
+	github.com/letsencrypt/pebble/v2 v2.10.0
 	github.com/miekg/dns v1.1.70
 	github.com/stretchr/testify v1.11.1
 )
@@ -160,7 +160,7 @@ require (
 	github.com/labbsr0x/bindman-dns-webhook v1.0.2 // indirect
 	github.com/labbsr0x/goh v1.0.1 // indirect
 	github.com/leodido/go-urn v1.4.0 // indirect
-	github.com/letsencrypt/challtestsrv v1.3.2 // indirect
+	github.com/letsencrypt/challtestsrv v1.4.2 // indirect
 	github.com/linode/linodego v1.64.0 // indirect
 	github.com/liquidweb/liquidweb-cli v0.6.9 // indirect
 	github.com/liquidweb/liquidweb-go v1.6.4 // indirect
