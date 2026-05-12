@@ -116,7 +116,12 @@ func (b *backend) certsRead(ctx context.Context, req *logical.Request, data *fra
 		b.Logger().Debug("Setting DNS nameservers to", "dns-resolvers", b.dnsResolvers)
 	}
 
-	if b.skipAuthoritativeNSCheck || provider == "nil" {
+	if len(act.DnsResolvers) > 0 {
+		opts = append(opts, dns01.AddRecursiveNameservers(dns01.ParseNameservers(act.DnsResolvers)))
+		b.Logger().Debug("Setting DNS nameservers from account to", "dns-resolvers", act.DnsResolvers)
+	}
+
+	if b.skipAuthoritativeNSCheck || act.SkipAuthoritativeNSCheck || provider == "nil" {
 		opts = append(opts, dns01.DisableAuthoritativeNssPropagationRequirement())
 		b.Logger().Debug("Skipping authoritative NS checks")
 	}

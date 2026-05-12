@@ -115,6 +115,8 @@ The `dns_provider_env` in this case is `DO_AUTH_TOKEN`
 - `directory_url` (optional): ACME directory URL (defaults to Let's Encrypt production)
 - `key_type` (optional): Key type for the account key (`EC256`, `EC384`, `RSA2048`, `RSA4096`, `RSA8192`)
 - `dns_provider_env` (optional): Key-value pairs of environment variables to set for DNS provider authentication
+- `dns_resolvers` (optional): `host:port` resolvers to use for DNS-01 SOA/propagation lookups (e.g. `1.1.1.1:53,8.8.8.8:53`). Useful in split-horizon DNS setups
+- `skip_authoritative_ns_check` (optional): Skip the authoritative-NS propagation gate before requesting validation
 
 ### Reading Account Information
 

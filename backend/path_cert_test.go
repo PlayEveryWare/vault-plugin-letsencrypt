@@ -201,6 +201,64 @@ func TestPathCerts_IssuesNew(t *testing.T) {
 	assertCertMatchesKey(t, certs[0], key)
 }
 
+func TestPathCerts_IssuesNew_AccountDNSResolvers(t *testing.T) {
+	b := createTestBackend(t)
+
+	as := b.startACMEServer(t)
+	defer as.Close()
+
+	// Move the test resolver from the backend (test back-door) onto the
+	// account so this test exercises the per-account configuration path.
+	resolvers := b.dnsResolvers
+	b.dnsResolvers = nil
+	b.skipAuthoritativeNSCheck = false
+
+	const (
+		account  = "test-account"
+		provider = "test-dns"
+		fqdn     = "test.example.com"
+	)
+
+	path := MakeDNS01Path(account, provider, fqdn)
+
+	b.RegisterDNSProvider(provider, func() (challenge.Provider, error) {
+		return as, nil
+	})
+
+	accountPath := "accounts/" + account
+	req := &logical.Request{
+		Path:      accountPath,
+		Operation: logical.UpdateOperation,
+		Data: map[string]interface{}{
+			"email":                       "test@example.com",
+			"directory_url":               as.DirectoryURL,
+			"tos_agreed":                  true,
+			"dns_resolvers":               resolvers,
+			"skip_authoritative_ns_check": true,
+		},
+	}
+
+	resp, err := b.HandleRequest(t, req)
+	require.NoError(t, err)
+	require.NotNil(t, resp)
+	require.NoError(t, resp.Error())
+
+	req = &logical.Request{
+		Path:      path,
+		Operation: logical.ReadOperation,
+	}
+
+	resp, err = b.HandleRequest(t, req)
+	require.NoError(t, err)
+	require.NotNil(t, resp)
+	require.NoError(t, resp.Error())
+
+	certs, err := certcrypto.ParsePEMBundle([]byte(resp.Data["certificate"].(string)))
+	require.NoError(t, err)
+	require.NotEmpty(t, certs)
+	assert.Contains(t, certcrypto.ExtractDomains(certs[0]), fqdn)
+}
+
 func TestPathCerts_Renew(t *testing.T) {
 	b := createTestBackend(t)
 
