@@ -7,6 +7,7 @@ import (
 	"encoding/pem"
 	"errors"
 	"fmt"
+	"sort"
 	"time"
 
 	"github.com/go-acme/lego/v4/certcrypto"
@@ -48,7 +49,17 @@ func pathCerts(b *backend) []*framework.Path {
 				"fqdn": {
 					Type:        framework.TypeString,
 					Required:    true,
-					Description: "FQDN to manage",
+					Description: "FQDN to manage (becomes the CN and is " +
+						"always the first SAN)",
+				},
+				"alt_names": {
+					Type:        framework.TypeCommaStringSlice,
+					Required:    false,
+					Description: "Additional subject alternative names " +
+						"(SANs) to request alongside the FQDN. Persisted " +
+						"with the cert; renewal reuses the stored list " +
+						"when this field is omitted. Supplying a " +
+						"different list forces re-issuance.",
 				},
 			},
 			Operations: map[logical.Operation]framework.OperationHandler{
@@ -70,6 +81,11 @@ func (b *backend) certsRead(ctx context.Context, req *logical.Request, data *fra
 	provider := data.Get("provider").(string)
 	fqdn := data.Get("fqdn").(string)
 
+	// alt_names is only honored when supplied. On renewal reads (which
+	// pass no parameters), the stored list on the existing cert is what
+	// drives the next ObtainRequest.
+	altNames, altNamesProvided := altNamesFromData(data)
+
 	// check existing certificate
 	c, err := getCert(ctx, req.Storage, req.Path)
 	if err != nil {
@@ -78,10 +94,22 @@ func (b *backend) certsRead(ctx context.Context, req *logical.Request, data *fra
 
 	if c != nil && len(c.CertificateChain) > 0 && c.Key.PrivateKey != nil {
 
+		// A supplied alt_names list that differs from what's stored
+		// forces re-issuance even if the existing cert is otherwise
+		// still inside its renewal window.
+		altNamesChanged := altNamesProvided && !stringSlicesEqual(altNames, c.AltNames)
+
 		timeUntilRenwal := time.Until(c.RenewalDeadline())
-		if timeUntilRenwal > 0 {
+		if timeUntilRenwal > 0 && !altNamesChanged {
 			return b.certResponse(ctx, c, req, account, provider)
 		}
+	}
+
+	// Renewal path: caller didn't supply alt_names, so reuse whatever
+	// was stored with the existing cert (empty slice for legacy certs
+	// issued before this field existed).
+	if !altNamesProvided && c != nil {
+		altNames = c.AltNames
 	}
 
 	actPath := fmt.Sprintf("accounts/%s", account)
@@ -138,8 +166,14 @@ func (b *backend) certsRead(ctx context.Context, req *logical.Request, data *fra
 		return nil, err
 	}
 
+	// lego treats the first Domain as the CN and includes every entry
+	// as a SAN. The ACME server is permitted to add the CN as a SAN
+	// implicitly, so passing fqdn once is sufficient even when
+	// altNames is empty.
+	domains := append([]string{fqdn}, altNames...)
+
 	certReq := certificate.ObtainRequest{
-		Domains: []string{fqdn},
+		Domains: domains,
 		Bundle:  true,
 	}
 
@@ -172,6 +206,7 @@ func (b *backend) certsRead(ctx context.Context, req *logical.Request, data *fra
 	c = &cert{
 		CertificateChain: certChain,
 		Key:              accountKey{privateKey},
+		AltNames:         altNames,
 	}
 
 	err = c.write(ctx, req.Storage, req.Path)
@@ -220,4 +255,37 @@ func (b *backend) certResponse(ctx context.Context, c *cert, req *logical.Reques
 	response.Secret.MaxTTL = ttl
 
 	return response, nil
+}
+
+// altNamesFromData extracts the alt_names field. The second return is
+// true when the caller actually supplied the field — needed to
+// distinguish "deliberately empty" from "omitted on a renewal read"
+// without losing the stored list.
+func altNamesFromData(data *framework.FieldData) ([]string, bool) {
+	raw, ok := data.GetOk("alt_names")
+	if !ok {
+		return nil, false
+	}
+	names, _ := raw.([]string)
+	return names, true
+}
+
+// stringSlicesEqual compares two slices ignoring order. Used to detect
+// alt_names changes — operators may rebuild the list from a set or
+// reorder freely in inventory, and an order-only change shouldn't
+// force a re-issuance.
+func stringSlicesEqual(a, b []string) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	aCopy := append([]string(nil), a...)
+	bCopy := append([]string(nil), b...)
+	sort.Strings(aCopy)
+	sort.Strings(bCopy)
+	for i := range aCopy {
+		if aCopy[i] != bCopy[i] {
+			return false
+		}
+	}
+	return true
 }

@@ -138,12 +138,31 @@ vault read letsencrypt/certs/dns-01/myaccount/cloudflare/example.com
 - `provider`: The DNS provider name (e.g., `cloudflare`, `route53`, `gcloud`, etc.)
 - `fqdn`: The fully qualified domain name for the certificate
 
+**Parameters:**
+- `alt_names` (optional): Comma-separated list of additional Subject
+  Alternative Names to request alongside the FQDN. The FQDN is always
+  the certificate's Common Name and the first SAN; `alt_names` entries
+  are added as further SANs. Persisted with the cert — renewal reads
+  (no parameters) reuse the stored list. Supplying a different list
+  forces re-issuance.
+
 **Response:**
 The response includes:
 - `certificate`: PEM-encoded certificate chain
 - `private_key`: PEM-encoded private key
 
 The secret has a TTL set to expire 30 days before the certificate expires, ensuring automatic renewal.
+
+#### Multi-SAN example
+
+```bash
+vault read letsencrypt/certs/dns-01/myaccount/cloudflare/node1.example.com \
+  alt_names=service.example.com,node1-alt.example.com
+```
+
+Issues a cert with CN=`node1.example.com` and SANs=`[node1.example.com,
+service.example.com, node1-alt.example.com]`. Subsequent reads (no
+`alt_names`) renew against the same name set.
 
 ### Supported DNS Providers
 

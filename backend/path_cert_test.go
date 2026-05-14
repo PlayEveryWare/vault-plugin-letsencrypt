@@ -201,6 +201,192 @@ func TestPathCerts_IssuesNew(t *testing.T) {
 	assertCertMatchesKey(t, certs[0], key)
 }
 
+func TestPathCerts_IssuesNew_AltNames(t *testing.T) {
+	b := createTestBackend(t)
+
+	as := b.startACMEServer(t)
+	defer as.Close()
+
+	const (
+		account  = "test-account"
+		provider = "test-dns"
+		fqdn     = "node1.example.com"
+		alt1     = "service.example.com"
+		alt2     = "node1-alt.example.com"
+	)
+
+	path := MakeDNS01Path(account, provider, fqdn)
+
+	b.RegisterDNSProvider(provider, func() (challenge.Provider, error) {
+		return as, nil
+	})
+
+	accountPath := "accounts/" + account
+	req := &logical.Request{
+		Path:      accountPath,
+		Operation: logical.UpdateOperation,
+		Data: map[string]interface{}{
+			"email":         "test@example.com",
+			"directory_url": as.DirectoryURL,
+			"tos_agreed":    true,
+		},
+	}
+
+	resp, err := b.HandleRequest(t, req)
+	require.NoError(t, err)
+	require.NotNil(t, resp)
+	require.NoError(t, resp.Error())
+
+	req = &logical.Request{
+		Path:      path,
+		Operation: logical.ReadOperation,
+		Data: map[string]interface{}{
+			"alt_names": []string{alt1, alt2},
+		},
+	}
+
+	resp, err = b.HandleRequest(t, req)
+	require.NoError(t, err)
+	require.NotNil(t, resp)
+	require.NoError(t, resp.Error())
+
+	certs, err := certcrypto.ParsePEMBundle([]byte(resp.Data["certificate"].(string)))
+	require.NoError(t, err)
+	require.NotEmpty(t, certs)
+
+	domains := certcrypto.ExtractDomains(certs[0])
+	assert.Contains(t, domains, fqdn)
+	assert.Contains(t, domains, alt1)
+	assert.Contains(t, domains, alt2)
+
+	stored, err := getCert(t.Context(), b.Storage, path)
+	require.NoError(t, err)
+	assert.ElementsMatch(t, []string{alt1, alt2}, stored.AltNames)
+
+	// Renewal-style read with no alt_names supplied. Cert is still in
+	// the renewal window so the cached cert should come back unchanged,
+	// preserving the stored AltNames.
+	req = &logical.Request{
+		Path:      path,
+		Operation: logical.ReadOperation,
+	}
+
+	resp, err = b.HandleRequest(t, req)
+	require.NoError(t, err)
+	require.NotNil(t, resp)
+	require.NoError(t, resp.Error())
+
+	cached, err := certcrypto.ParsePEMBundle([]byte(resp.Data["certificate"].(string)))
+	require.NoError(t, err)
+	cachedDomains := certcrypto.ExtractDomains(cached[0])
+	assert.Contains(t, cachedDomains, fqdn)
+	assert.Contains(t, cachedDomains, alt1)
+	assert.Contains(t, cachedDomains, alt2)
+}
+
+func TestPathCerts_AltNamesChange_ForcesReissue(t *testing.T) {
+	b := createTestBackend(t)
+
+	as := b.startACMEServer(t)
+	defer as.Close()
+
+	const (
+		account  = "test-account"
+		provider = "test-dns"
+		fqdn     = "node1.example.com"
+		alt1     = "service.example.com"
+		alt2     = "node1-alt.example.com"
+		altNew   = "extra.example.com"
+	)
+
+	path := MakeDNS01Path(account, provider, fqdn)
+
+	b.RegisterDNSProvider(provider, func() (challenge.Provider, error) {
+		return as, nil
+	})
+
+	accountPath := "accounts/" + account
+	req := &logical.Request{
+		Path:      accountPath,
+		Operation: logical.UpdateOperation,
+		Data: map[string]interface{}{
+			"email":         "test@example.com",
+			"directory_url": as.DirectoryURL,
+			"tos_agreed":    true,
+		},
+	}
+
+	resp, err := b.HandleRequest(t, req)
+	require.NoError(t, err)
+	require.NotNil(t, resp)
+	require.NoError(t, resp.Error())
+
+	// First issuance with alt1+alt2.
+	req = &logical.Request{
+		Path:      path,
+		Operation: logical.ReadOperation,
+		Data: map[string]interface{}{
+			"alt_names": []string{alt1, alt2},
+		},
+	}
+
+	resp, err = b.HandleRequest(t, req)
+	require.NoError(t, err)
+	require.NoError(t, resp.Error())
+
+	firstCerts, err := certcrypto.ParsePEMBundle([]byte(resp.Data["certificate"].(string)))
+	require.NoError(t, err)
+	firstSerial := firstCerts[0].SerialNumber
+
+	// Re-read with the same set in a different order — should be a
+	// cache hit (no re-issuance), so the serial number stays the same.
+	req = &logical.Request{
+		Path:      path,
+		Operation: logical.ReadOperation,
+		Data: map[string]interface{}{
+			"alt_names": []string{alt2, alt1},
+		},
+	}
+
+	resp, err = b.HandleRequest(t, req)
+	require.NoError(t, err)
+	require.NoError(t, resp.Error())
+
+	sameOrderCerts, err := certcrypto.ParsePEMBundle([]byte(resp.Data["certificate"].(string)))
+	require.NoError(t, err)
+	assert.Equal(t, 0, firstSerial.Cmp(sameOrderCerts[0].SerialNumber),
+		"reorder-only alt_names should not force re-issuance")
+
+	// Re-read with a genuinely different list — should re-issue
+	// (different serial) and update the stored AltNames.
+	req = &logical.Request{
+		Path:      path,
+		Operation: logical.ReadOperation,
+		Data: map[string]interface{}{
+			"alt_names": []string{alt1, altNew},
+		},
+	}
+
+	resp, err = b.HandleRequest(t, req)
+	require.NoError(t, err)
+	require.NoError(t, resp.Error())
+
+	newCerts, err := certcrypto.ParsePEMBundle([]byte(resp.Data["certificate"].(string)))
+	require.NoError(t, err)
+	assert.NotEqual(t, 0, firstSerial.Cmp(newCerts[0].SerialNumber),
+		"changed alt_names should force re-issuance")
+
+	newDomains := certcrypto.ExtractDomains(newCerts[0])
+	assert.Contains(t, newDomains, fqdn)
+	assert.Contains(t, newDomains, alt1)
+	assert.Contains(t, newDomains, altNew)
+	assert.NotContains(t, newDomains, alt2)
+
+	stored, err := getCert(t.Context(), b.Storage, path)
+	require.NoError(t, err)
+	assert.ElementsMatch(t, []string{alt1, altNew}, stored.AltNames)
+}
+
 func TestPathCerts_IssuesNew_AccountDNSResolvers(t *testing.T) {
 	b := createTestBackend(t)
 
