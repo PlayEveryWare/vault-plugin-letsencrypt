@@ -41,6 +41,8 @@ type acmeServer struct {
 	DirectoryURL string
 	listener     net.Listener
 	dnsListener  net.PacketConn
+	// pebble >= 2.10 queries DNS over TCP, so also serve the mock resolver on TCP
+	dnsTCPListener net.Listener
 
 	txtRecords     map[string][]string
 	txtRecordsLock sync.RWMutex
@@ -73,8 +75,25 @@ func (b *testBackend) startACMEServer(t *testing.T, opts ...AcmeServerOption) *a
 	var err error
 	var resolverAddress string
 	if !config.SkipDNS {
-		as.dnsListener, err = net.ListenPacket("udp", "127.0.0.1:0")
-		require.NoError(t, err)
+		// Bind the same port on both TCP and UDP. Windows reserves large
+		// per-protocol port blocks (Hyper-V/WinNAT) inside the ephemeral range
+		// and allocates ephemeral ports sequentially, so a port that is free
+		// for TCP is frequently reserved for UDP. Retry, holding the failed
+		// TCP listeners open until we succeed so each attempt gets a new port.
+		var failed []net.Listener
+		for attempt := 0; ; attempt++ {
+			as.dnsTCPListener, err = net.Listen("tcp", "127.0.0.1:0")
+			require.NoError(t, err)
+			as.dnsListener, err = net.ListenPacket("udp", as.dnsTCPListener.Addr().String())
+			if err == nil {
+				break
+			}
+			failed = append(failed, as.dnsTCPListener)
+			require.Less(t, attempt, 500, "unable to find a free UDP+TCP port for mock DNS: %v", err)
+		}
+		for _, l := range failed {
+			l.Close()
+		}
 
 		dnsHandler := dns.NewServeMux()
 		dnsHandler.HandleFunc(".", as.HandleDNS)
@@ -84,6 +103,12 @@ func (b *testBackend) startACMEServer(t *testing.T, opts ...AcmeServerOption) *a
 			Handler:    dnsHandler,
 		}
 		go dnsServer.ActivateAndServe()
+
+		dnsTCPServer := &dns.Server{
+			Listener: as.dnsTCPListener,
+			Handler:  dnsHandler,
+		}
+		go dnsTCPServer.ActivateAndServe()
 
 		dnsAddr, ok := as.dnsListener.LocalAddr().(*net.UDPAddr)
 		require.True(t, ok)
@@ -135,6 +160,7 @@ func (b *testBackend) startACMEServer(t *testing.T, opts ...AcmeServerOption) *a
 
 	const (
 		oscpResponderURL               = ""
+		keyAlgorithm                   = "rsa"
 		alternateRoots                 = 0
 		chainLength                    = 1
 		strictMode                     = false
@@ -150,11 +176,13 @@ func (b *testBackend) startACMEServer(t *testing.T, opts ...AcmeServerOption) *a
 		},
 	}
 
+	caaIdentities := []string{"pebble.letsencrypt.org"}
+
 	db := db.NewMemoryStore()
-	ca := ca.New(logger, db, oscpResponderURL, alternateRoots, chainLength, profiles)
+	ca := ca.New(logger, db, oscpResponderURL, keyAlgorithm, alternateRoots, chainLength, profiles)
 	va := va.New(logger, port, port, strictMode, resolverAddress, db)
 
-	wfeHandler := wfe.New(logger, db, va, ca,
+	wfeHandler := wfe.New(logger, db, va, ca, caaIdentities,
 		strictMode, externalAccountBindingRequired,
 		retryAuthz, retryOrder)
 
@@ -252,5 +280,8 @@ func (as *acmeServer) Close() {
 	as.listener.Close()
 	if as.dnsListener != nil {
 		as.dnsListener.Close()
+	}
+	if as.dnsTCPListener != nil {
+		as.dnsTCPListener.Close()
 	}
 }
