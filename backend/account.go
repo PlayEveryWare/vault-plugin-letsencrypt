@@ -41,11 +41,13 @@ type accountKey struct {
 }
 
 type account struct {
-	Email          string
-	Registration   *registration.Resource
-	Key            accountKey
-	DirectoryURL   string
-	DNSProviderEnv map[string]string
+	Email                    string
+	Registration             *registration.Resource
+	Key                      accountKey
+	DirectoryURL             string
+	DNSProviderEnv           map[string]string
+	DnsResolvers             []string
+	SkipAuthoritativeNSCheck bool
 }
 
 // LEGO registration.User interface

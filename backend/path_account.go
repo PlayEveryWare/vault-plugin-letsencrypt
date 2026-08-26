@@ -51,6 +51,15 @@ func pathAccounts(b *backend) []*framework.Path {
 					Type:        framework.TypeKVPairs,
 					Description: "Environment variables to set when performing dns-01 challenges",
 				},
+				"dns_resolvers": {
+					Type:        framework.TypeCommaStringSlice,
+					Description: "Recursive DNS resolvers (host:port) to use when looking up SOA and TXT records during the DNS-01 challenge. Useful in split-horizon DNS setups where the host's resolver is not authoritative for the public zone.",
+				},
+				"skip_authoritative_ns_check": {
+					Type:        framework.TypeBool,
+					Default:     false,
+					Description: "If true, skip the authoritative nameserver propagation check before asking the ACME server to validate.",
+				},
 			},
 			Operations: map[logical.Operation]framework.OperationHandler{
 				logical.ReadOperation: &framework.PathOperation{
@@ -97,6 +106,14 @@ func (b *backend) accountsRead(ctx context.Context, req *logical.Request, data *
 	} else {
 		resp["dns_provider_env"] = a.DNSProviderEnv
 	}
+
+	if a.DnsResolvers == nil {
+		resp["dns_resolvers"] = []string{}
+	} else {
+		resp["dns_resolvers"] = a.DnsResolvers
+	}
+
+	resp["skip_authoritative_ns_check"] = a.SkipAuthoritativeNSCheck
 
 	return &logical.Response{
 		Data: resp,
@@ -152,6 +169,14 @@ func (b *backend) accountsWrite(ctx context.Context, req *logical.Request, data 
 		for k, v := range dnsEnv {
 			act.DNSProviderEnv[k] = v
 		}
+	}
+
+	if resolversRaw, ok := data.GetOk("dns_resolvers"); ok {
+		act.DnsResolvers = resolversRaw.([]string)
+	}
+
+	if skipRaw, ok := data.GetOk("skip_authoritative_ns_check"); ok {
+		act.SkipAuthoritativeNSCheck = skipRaw.(bool)
 	}
 
 	client, err := act.NewClient(b.tlsConfig)

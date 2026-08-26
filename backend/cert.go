@@ -12,6 +12,7 @@ import (
 type cert struct {
 	CertificateChain []*x509.Certificate
 	Key              accountKey
+	AltNames         []string
 }
 
 func getCert(ctx context.Context, storage logical.Storage, path string) (*cert, error) {
@@ -68,12 +69,14 @@ func (c *cert) write(ctx context.Context, storage logical.Storage, path string) 
 type certJSON struct {
 	CertificateChain [][]byte
 	Key              accountKey
+	AltNames         []string `json:",omitempty"`
 }
 
 func (c *cert) MarshalJSON() ([]byte, error) {
 	cj := &certJSON{
 		CertificateChain: make([][]byte, len(c.CertificateChain)),
 		Key:              c.Key,
+		AltNames:         c.AltNames,
 	}
 
 	for ii := range c.CertificateChain {
@@ -91,6 +94,7 @@ func (c *cert) UnmarshalJSON(data []byte) error {
 
 	c.CertificateChain = make([]*x509.Certificate, len(cj.CertificateChain))
 	c.Key = cj.Key
+	c.AltNames = cj.AltNames
 
 	for ii := range cj.CertificateChain {
 		cert, err := x509.ParseCertificate(cj.CertificateChain[ii])

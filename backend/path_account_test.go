@@ -454,6 +454,78 @@ func TestPathAccounts_Write_WithDNSEnv_Merge(t *testing.T) {
 	assert.Equal(t, dnsEnv, act.DNSProviderEnv)
 }
 
+func TestPathAccounts_Write_WithDNSResolvers(t *testing.T) {
+	b := createTestBackend(t)
+
+	as := b.startACMEServer(t)
+	defer as.Close()
+
+	path := "accounts/test-account"
+	resolvers := []string{"1.1.1.1:53", "8.8.8.8:53"}
+
+	req := &logical.Request{
+		Path:      path,
+		Operation: logical.UpdateOperation,
+		Data: map[string]interface{}{
+			"email":                       "test@example.com",
+			"directory_url":               as.DirectoryURL,
+			"tos_agreed":                  true,
+			"dns_resolvers":               resolvers,
+			"skip_authoritative_ns_check": true,
+		},
+	}
+
+	resp, err := b.HandleRequest(t, req)
+	require.NoError(t, err)
+	require.NotNil(t, resp)
+	require.NoError(t, resp.Error())
+	require.NotNil(t, resp.Data)
+
+	assert.Equal(t, resolvers, resp.Data["dns_resolvers"])
+	assert.Equal(t, true, resp.Data["skip_authoritative_ns_check"])
+
+	act, err := getAccount(t.Context(), b.Storage, path)
+	require.NoError(t, err)
+	require.NotNil(t, act)
+	assert.Equal(t, resolvers, act.DnsResolvers)
+	assert.True(t, act.SkipAuthoritativeNSCheck)
+}
+
+func TestPathAccounts_Read_DNSResolversDefaults(t *testing.T) {
+	b := createTestBackend(t)
+
+	const path = "accounts/test-account"
+	act := &account{
+		Email:        "test@example.com",
+		DirectoryURL: "https://acme.example.com/directory",
+		Registration: &registration.Resource{
+			URI: "https://registration.example.com/reg/123",
+			Body: acme.Account{
+				TermsOfServiceAgreed: true,
+			},
+		},
+	}
+	err := act.Key.Generate(KeyTypeEC256)
+	require.NoError(t, err)
+
+	err = act.write(t.Context(), b.Storage, path)
+	require.NoError(t, err)
+
+	req := &logical.Request{
+		Path:      path,
+		Operation: logical.ReadOperation,
+	}
+
+	resp, err := b.HandleRequest(t, req)
+	require.NoError(t, err)
+	require.NotNil(t, resp)
+	require.NoError(t, resp.Error())
+	require.NotNil(t, resp.Data)
+
+	assert.Equal(t, []string{}, resp.Data["dns_resolvers"])
+	assert.Equal(t, false, resp.Data["skip_authoritative_ns_check"])
+}
+
 func TestPathAccounts_Delete_WithoutRegistration(t *testing.T) {
 	b := createTestBackend(t)
 
